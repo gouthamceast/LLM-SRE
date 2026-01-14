@@ -8,10 +8,10 @@ Your job:
 - Propose the safest immediate fix
 
 Rules:
-- Do NOT guess
-- Do NOT invent causes
-- Base your answer on evidence
-- Respond in valid JSON only
+- Use ONLY the provided incident and logs
+- Do NOT speculate
+- Respond with VALID JSON ONLY
+- Do NOT add explanations outside JSON
 """
 
 USER_PROMPT_TEMPLATE = """

@@ -1,7 +1,21 @@
 import json
+import os
+from dotenv import load_dotenv
+from openai import AzureOpenAI
+
 from kafka import KafkaConsumer
 from opensearchpy import OpenSearch
 from prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
+
+
+load_dotenv()
+
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+)
+
 
 # ---- Config ----
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
@@ -41,16 +55,25 @@ def fetch_relevant_logs(service: str):
     return [hit["_source"] for hit in response["hits"]["hits"]]
 
 def call_llm(system_prompt: str, user_prompt: str):
-    """
-    TEMP: Stubbed LLM response.
-    We replace this with a real LLM in next step.
-    """
-    return {
-        "root_cause": "API Gateway connection pool exhaustion under high traffic",
-        "confidence": 0.85,
-        "immediate_fix": "Increase connection pool size and scale replicas",
-        "long_term_fix": "Introduce rate limiting and async request handling"
-    }
+    response = client.responses.create(
+        model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+        input=[
+            {
+                "role": "system",
+                "content": system_prompt,
+            },
+            {
+                "role": "user",
+                "content": user_prompt,
+            },
+        ],
+    )
+
+    output_text = response.output_text
+    return json.loads(output_text)
+
+
+
 
 def main():
     print("🧠 LLM Agent running...")
