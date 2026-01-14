@@ -1,7 +1,14 @@
+from datetime import datetime, timedelta
 import json
 import uuid
 from datetime import datetime
 from kafka import KafkaConsumer, KafkaProducer
+
+
+INCIDENT_COOLDOWN = timedelta(minutes=5)
+
+active_incidents = {}
+
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 
@@ -24,14 +31,27 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode("utf-8"),
 )
 
-def is_incident(metrics: dict) -> bool:
-    """
-    Simple deterministic rules.
-    """
+def is_healthy(metrics: dict) -> bool:
     return (
-        metrics["latency_ms"] > 1000
-        and metrics["error_rate"] > 5
-        and metrics["cpu"] > 80
+        metrics["latency_ms"] < 300
+        and metrics["error_rate"] < 2
+        and metrics["cpu"] < 70
+    )
+
+def is_incident(metrics: dict) -> bool:
+    service = metrics["service"]
+    now = datetime.utcnow()
+
+    # Suppress if incident already active
+    if service in active_incidents:
+        last_seen = active_incidents[service]["last_seen"]
+        if now - last_seen < INCIDENT_COOLDOWN:
+            return False
+
+    return (
+    metrics["error_rate"] > 10
+    or metrics["latency_ms"] > 800
+
     )
 
 def build_incident(metrics: dict) -> dict:
@@ -48,16 +68,33 @@ def build_incident(metrics: dict) -> dict:
     }
 
 def main():
-    print("🚨 Incident detector running...")
+    print("🚨 Incident detector running with state and feedback loop ... ")
 
     for msg in consumer:
         metrics = msg.value
+        service = metrics["service"]
+        now = datetime.utcnow()
+
         print(f"[METRICS] {metrics}")
+
+        if service in active_incidents:
+            active_incidents[service]["last_seen"] = now
+            if is_healthy(metrics):
+                print(f"✅ INCIDENT RESOLVED for {service}")
+                del active_incidents[service]
+                continue
 
         if is_incident(metrics):
             incident = build_incident(metrics)
+
+            active_incidents[incident["service"]] = {
+                "state": "OPEN",
+                "created_at": datetime.utcnow(),
+                "last_seen": datetime.utcnow(),
+            }
+
             producer.send(INCIDENTS_TOPIC, incident)
-            print(f"🔥 INCIDENT DETECTED: {incident}")
+            print(f"🔥 INCIDENT OPENED: {incident}")
 
 if __name__ == "__main__":
     main()

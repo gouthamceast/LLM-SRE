@@ -1,5 +1,7 @@
 import json
 from kafka import KafkaConsumer
+from kafka import KafkaProducer
+
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 INCIDENTS_TOPIC = "incidents"
@@ -13,6 +15,14 @@ consumer = KafkaConsumer(
     auto_offset_reset="latest",
     enable_auto_commit=True,
 )
+
+REMEDIATIONS_TOPIC = "remediations"
+
+remediation_producer = KafkaProducer(
+    bootstrap_servers="localhost:9092",
+    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+)
+
 
 def interpret_fix(llm_response: dict):
     fix = llm_response["immediate_fix"].lower()
@@ -40,8 +50,19 @@ def dry_run(actions: list):
 
 def apply_fix(actions: list):
     print("\n🚀 APPLYING FIX")
+
     for action in actions:
         print(f"✅ Executed: {action}")
+
+    remediation_event = {
+        "service": "api-gateway",
+        "status": "FIX_APPLIED",
+        "actions": actions,
+    }
+
+    remediation_producer.send(REMEDIATIONS_TOPIC, remediation_event)
+    print("📣 Remediation event emitted")
+
 
 def main():
     print("🤖 Hot Fix Engine running...")
