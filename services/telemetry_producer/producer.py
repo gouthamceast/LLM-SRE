@@ -7,7 +7,9 @@ from kafka import KafkaConsumer
 import threading
 
 failure_mode = False
-has_failed_once = False
+cooldown = 0
+COOLDOWN_STEPS = 6
+
 
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
@@ -20,7 +22,7 @@ producer = KafkaProducer(
 SERVICE_NAME = "api-gateway"
 
 def remediation_listener():
-    global failure_mode, step
+    global failure_mode, step, cooldown
 
     consumer = KafkaConsumer(
         "remediations",
@@ -34,7 +36,9 @@ def remediation_listener():
         if event.get("status") == "FIX_APPLIED":
             print("🟢 Producer entering RECOVERY mode")
             failure_mode = False
-            print("🟢 Producer stabilized after recovery")
+            step = 0
+            cooldown = COOLDOWN_STEPS
+
 
 
 
@@ -50,9 +54,9 @@ def generate_metrics(step: int):
     error_rate = min(50, step * 4)
     cpu = min(95, 30 + step * 5)
 
-    if latency > 800 and not has_failed_once:
+    if latency > 800 or error_rate > 30:
         failure_mode = True
-        has_failed_once = True
+
 
 
     if not failure_mode:
@@ -100,7 +104,7 @@ def generate_logs():
 
 
 def main():
-    global step
+    global cooldown, step
     step = 0
     print("🚀 Starting telemetry producer...")
     threading.Thread(target=remediation_listener, daemon=True).start()
@@ -114,8 +118,13 @@ def main():
         for log in logs:
             producer.send("logs", log)
             print(f"[LOG] {log}")
-        if not has_failed_once:
+
+        # Cooldown period after fix
+        if cooldown > 0:
+            cooldown -= 1
+        else:
             step += 1
+
         time.sleep(2)
 
 

@@ -1,7 +1,6 @@
-# LLM-SRE
-An automated observability and remediation platform
+LLM-SRE — Autonomous Incident Detection & Remediation
+Overview
 
+LLM-SRE is an end-to-end simulation of how an SRE system can:
 
-#my intention
-
-When production breaks, can software detect it, understand it, and fix it without humans?
+Detect incidents from live telemetry
