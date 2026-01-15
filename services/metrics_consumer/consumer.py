@@ -1,15 +1,11 @@
 import json
 from kafka import KafkaConsumer
 from opensearchpy import OpenSearch
-from datetime import datetime
 
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-TOPIC = "logs"
-INDEX_NAME = "logs-index"
+TOPIC = "metrics"
 METRICS_INDEX = "metrics-index"
 
-
-# Kafka Consumer
 consumer = KafkaConsumer(
     TOPIC,
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
@@ -18,44 +14,37 @@ consumer = KafkaConsumer(
     enable_auto_commit=True,
 )
 
-# OpenSearch Client
 opensearch = OpenSearch(
     hosts=[{"host": "localhost", "port": 9200}],
-    http_compress=True,
     use_ssl=False,
     verify_certs=False,
 )
 
 def create_metrics_index_if_not_exists():
     if not opensearch.indices.exists(index=METRICS_INDEX):
-        opensearch.indices.create(index=METRICS_INDEX)
-        print(f"📁 Created index: {METRICS_INDEX}")
-
-def create_index_if_not_exists():
-    if not opensearch.indices.exists(index=INDEX_NAME):
         mapping = {
             "mappings": {
                 "properties": {
                     "service": {"type": "keyword"},
-                    "level": {"type": "keyword"},
-                    "message": {"type": "text"},
+                    "latency_ms": {"type": "integer"},
+                    "rps": {"type": "integer"},
+                    "cpu": {"type": "integer"},
+                    "error_rate": {"type": "float"},
                     "timestamp": {"type": "date"},
                 }
             }
         }
-        opensearch.indices.create(index=INDEX_NAME, body=mapping)
-        print(f"✅ Created index: {INDEX_NAME}")
-
+        opensearch.indices.create(index=METRICS_INDEX, body=mapping)
+        print(f"📁 Created index: {METRICS_INDEX}")
 
 def main():
-    print("🚀 Starting log consumer...")
+    print("🚀 Starting metrics consumer...")
     create_metrics_index_if_not_exists()
-    create_index_if_not_exists()
 
     for msg in consumer:
-        log_event = msg.value
-        opensearch.index(index=INDEX_NAME, body=log_event)
-        print(f"📥 Indexed log: {log_event}")
+        metric = msg.value
+        opensearch.index(index=METRICS_INDEX, body=metric)
+        print(f"📥 Indexed metric: {metric}")
 
 if __name__ == "__main__":
     main()

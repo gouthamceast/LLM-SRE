@@ -220,8 +220,3 @@ These are intentional to keep the system focused and understandable.
 ### Final note
 
 This project is meant to show how LLMs fit into real operational systems, not just how to generate text.
-
-
-
-
-

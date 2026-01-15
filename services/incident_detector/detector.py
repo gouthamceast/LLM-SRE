@@ -3,6 +3,8 @@ import json
 import uuid
 from datetime import datetime
 from kafka import KafkaConsumer, KafkaProducer
+from opensearchpy import OpenSearch
+
 
 
 INCIDENT_COOLDOWN = timedelta(minutes=5)
@@ -14,6 +16,13 @@ KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 
 METRICS_TOPIC = "metrics"
 INCIDENTS_TOPIC = "incidents"
+
+opensearch = OpenSearch(
+    hosts=[{"host": "localhost", "port": 9200}],
+    use_ssl=False,
+    verify_certs=False,
+)
+
 
 
 # Kafka Consumer for metrics
@@ -30,6 +39,32 @@ producer = KafkaProducer(
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
     value_serializer=lambda v: json.dumps(v).encode("utf-8"),
 )
+INCIDENTS_INDEX = "incidents-index"
+
+def create_incidents_index_if_not_exists():
+    if not opensearch.indices.exists(index=INCIDENTS_INDEX):
+        mapping = {
+            "mappings": {
+                "properties": {
+                    "incident_id": {"type": "keyword"},
+                    "service": {"type": "keyword"},
+                    "severity": {"type": "keyword"},
+                    "symptoms": {
+                        "properties": {
+                            "latency_ms": {"type": "integer"},
+                            "error_rate": {"type": "float"},
+                            "cpu": {"type": "integer"},
+                        }
+                    },
+                    "detected_at": {"type": "date"},
+                    "llm_diagnosis": {"type": "object"},
+                    "diagnosed_at": {"type": "date"},
+                }
+            }
+        }
+        opensearch.indices.create(index=INCIDENTS_INDEX, body=mapping)
+        print(f"📁 Created index: {INCIDENTS_INDEX}")
+
 
 def is_healthy(metrics: dict) -> bool:
     return (
@@ -69,7 +104,7 @@ def build_incident(metrics: dict) -> dict:
 
 def main():
     print("🚨 Incident detector running with state and feedback loop ... ")
-
+    create_incidents_index_if_not_exists()
     for msg in consumer:
         metrics = msg.value
         service = metrics["service"]
@@ -92,6 +127,12 @@ def main():
                 "created_at": datetime.utcnow(),
                 "last_seen": datetime.utcnow(),
             }
+
+            opensearch.index(
+            index=INCIDENTS_INDEX,
+            id=incident["incident_id"],
+            body=incident,
+        )
 
             producer.send(INCIDENTS_TOPIC, incident)
             print(f"🔥 INCIDENT OPENED: {incident}")

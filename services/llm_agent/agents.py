@@ -2,7 +2,7 @@ import json
 import os
 from dotenv import load_dotenv
 from openai import AzureOpenAI
-
+from datetime import datetime
 from kafka import KafkaConsumer
 from opensearchpy import OpenSearch
 from prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
@@ -80,6 +80,7 @@ def main():
 
     for msg in consumer:
         incident = msg.value
+        incident_id = incident["incident_id"]
         service = incident["service"]
 
         logs = fetch_relevant_logs(service)
@@ -92,7 +93,26 @@ def main():
         llm_response = call_llm(SYSTEM_PROMPT, user_prompt)
 
         print("\n🧠 LLM DIAGNOSIS")
+        opensearch.update(
+            index="incidents-index",
+            id=incident_id,
+            body={
+                "doc": {
+                    "incident_id": incident_id,
+                    "service": incident["service"],
+                    "severity": incident["severity"],
+                    "symptoms": incident["symptoms"],
+                    "detected_at": incident["detected_at"],
+                    "llm_diagnosis": llm_response,
+                    "diagnosed_at": datetime.utcnow().isoformat(),
+                },
+                "doc_as_upsert": True,  # 🔑 THIS IS THE FIX
+            }
+        )
+
+        print(f"📦 Incident {incident_id} upserted with LLM diagnosis")
         print(json.dumps(llm_response, indent=2))
+
 
 if __name__ == "__main__":
     main()
